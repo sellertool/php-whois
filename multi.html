@@ -1,0 +1,326 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN" class="h-full">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WHOIS 域名查询</title>
+    <script src="https://lf26-cdn-tos.bytecdntp.com/cdn/expire-1-M/jquery/3.6.0/jquery.min.js"></script>
+    <script src="/js/tailwind.min.js"></script>
+    <script src="https://lf26-cdn-tos.bytecdntp.com/cdn/expire-1-M/xlsx/0.18.2/xlsx.full.min.js"></script>
+    <link href="/css/fontawesome.min.css" rel="stylesheet">
+    <style>
+        .resize-handle {
+            position: absolute;
+            top: 0;
+            right: -3px;
+            bottom: 0;
+            width: 4px;
+            background: rgba(255, 255, 255, 255);
+            cursor: col-resize;
+            transition: background-color 0.2s;
+            z-index: 1;
+        }
+
+        .resize-handle:hover,
+        .resizing .resize-handle {
+            background: rgba(59, 130, 246, 0.5);
+            width: 6px;
+        }
+
+        .resizing {
+            background-color: rgba(59, 130, 246, 0.1);
+        }
+
+        th {
+            position: relative;
+            overflow: visible;
+            background-color: rgb(249, 250, 251);
+            user-select: none;
+        }
+
+        .resizable-table {
+            table-layout: fixed;
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+
+        .resizable-table th,
+        .resizable-table td {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .tld-item.selected {
+            background-color: rgb(59, 130, 246);
+            color: white;
+        }
+
+        .tld-item.selected:hover {
+            background-color: rgb(37, 99, 235);
+        }
+    </style>
+    <script src="/js/main.js"></script>
+</head>
+
+<body class="bg-gray-50 flex flex-col min-h-full">
+    <div class="container mx-auto px-4 py-8 flex-grow">
+        <div class="relative flex items-center mb-8">
+            <div class="text-3xl font-bold absolute left-0"><span id="currentDomain"></span></div>
+            <h1 class="text-3xl font-bold w-full text-center">WHOIS 域名查询系统</h1>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <!-- 左侧查询区域 -->
+            <div class="md:col-span-2 bg-white rounded-lg shadow-md p-6">
+                <div class="mb-6">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">输入域名前缀</label>
+                    <div class="relative">
+                        <textarea id="domains" rows="8" placeholder="每行输入一个域名前缀，例如：&#10;example&#10;test&#10;demo"
+                            class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"></textarea>
+                        <div class="absolute right-2 top-2 flex gap-2">
+                            <button id="clearDomains" class="text-gray-400 hover:text-gray-600" title="清空">
+                                <i class="fas fa-times"></i>
+                            </button>
+                            <button id="formatDomains" class="text-gray-400 hover:text-gray-600" title="格式化">
+                                <i class="fas fa-align-left"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="mt-2 flex justify-between items-center">
+                        <span class="text-sm text-gray-500">
+                            <span id="domainCount">0</span> 个域名
+                        </span>
+                        <div class="flex gap-2">
+                            <button id="gen4Digits"
+                                class="text-sm px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded-full">4位数字</button>
+                            <button id="gen4Letters"
+                                class="text-sm px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded-full">4位字母</button>
+                            <button id="gen3Digits"
+                                class="text-sm px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded-full">3位数字</button>
+                            <button id="gen3Letters"
+                                class="text-sm px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded-full">3位字母</button>
+                            <button id="genCustom"
+                                class="text-sm px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded-full">自定义</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex items-center gap-4 mb-6">
+                    <button id="uploadBtn"
+                        class="flex items-center px-4 py-2 border rounded-lg text-gray-700 hover:bg-gray-50">
+                        <i class="fas fa-upload mr-2"></i>
+                        上传文件
+                    </button>
+                    <input type="file" id="fileInput" accept=".txt,.csv" class="hidden">
+                    <span class="text-sm text-gray-500">支持 .txt, .csv 格式</span>
+                    <div id="dropZone"
+                        class="hidden fixed inset-0 bg-blue-500 bg-opacity-10 z-50 flex items-center justify-center">
+                        <div class="text-2xl text-blue-500">释放文件以上传</div>
+                    </div>
+                </div>
+
+                <div class="flex gap-4">
+                    <button id="search"
+                        class="w-full bg-blue-500 text-white py-3 rounded-lg hover:bg-blue-600 transition-colors flex items-center justify-center">
+                        <i class="fas fa-search mr-2"></i>
+                        开始查询
+                    </button>
+                    <button id="stopSearch"
+                        class="hidden w-full bg-red-500 text-white py-3 rounded-lg hover:bg-red-600 transition-colors flex items-center justify-center">
+                        <i class="fas fa-stop mr-2"></i>
+                        终止查询
+                    </button>
+                </div>
+
+                <!-- 查询进度显示 -->
+                <div id="queryProgress" class="mt-4 hidden">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-sm text-gray-600">查询进度</span>
+                        <span class="text-sm text-gray-600">
+                            <span id="completedQueries">0</span>/<span id="totalQueries">0</span>
+                        </span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2">
+                        <div id="progressBar" class="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                            style="width: 0%"></div>
+                    </div>
+                    <div id="currentQuery" class="text-sm text-gray-500 mt-1 truncate"></div>
+                </div>
+            </div>
+
+            <!-- 右侧TLD选择区域 -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <div class="mb-4">
+                    <div class="flex justify-between items-center mb-4">
+                        <div class="flex gap-2">
+                            <button class="px-4 py-1 rounded-full text-sm font-medium bg-gray-100 hover:bg-gray-200"
+                                id="searchTLDsBtn">搜索 TLDs</button>
+                        </div>
+                        <div class="flex gap-2">
+                            <button class="px-4 py-1 rounded-full text-sm font-medium bg-gray-100 hover:bg-gray-200"
+                                id="selectAllTLDs">全选</button>
+                            <button class="px-4 py-1 rounded-full text-sm font-medium bg-gray-100 hover:bg-gray-200"
+                                id="unselectAllTLDs">取消</button>
+                        </div>
+                    </div>
+                    <div class="relative">
+                        <input type="text" id="tldSearch" placeholder="搜索顶级域名..."
+                            class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 pl-10">
+                        <i class="fas fa-search absolute left-3 top-3 text-gray-400"></i>
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <h3 class="font-medium mb-2">热门 TLDs</h3>
+                    <div class="flex flex-wrap gap-2" id="popularTLDs">
+                        <span
+                            class="px-3 py-1 bg-gray-100 rounded-full text-sm cursor-pointer hover:bg-gray-200 tld-item">.com</span>
+                        <span
+                            class="px-3 py-1 bg-gray-100 rounded-full text-sm cursor-pointer hover:bg-gray-200 tld-item">.net</span>
+                        <span
+                            class="px-3 py-1 bg-gray-100 rounded-full text-sm cursor-pointer hover:bg-gray-200 tld-item">.org</span>
+                        <span
+                            class="px-3 py-1 bg-gray-100 rounded-full text-sm cursor-pointer hover:bg-gray-200 tld-item">.info</span>
+                    </div>
+                </div>
+
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="font-medium mb-2">所有 TLDs</h3>
+                    <button id="viewAllTLDs"
+                        class="px-4 py-1 rounded-full text-sm font-medium bg-gray-100 hover:bg-gray-200">查看全部</button>
+                </div>
+                <div class="max-h-[170px] overflow-y-auto border rounded-lg" id="allTLDs">
+                    <!-- TLD列表将通过JavaScript动态生成 -->
+                </div>
+            </div>
+        </div>
+
+        <!-- 查询结果区域 -->
+        <div id="results" class="mt-8">
+            <div id="result" class="bg-white rounded-lg shadow-md p-6 hidden">
+                <div class="flex justify-between items-center mb-4">
+                    <div class="flex items-center gap-4">
+                        <h2 class="text-xl font-semibold">查询结果</h2>
+                        <div class="text-sm text-gray-500">
+                            本次共查询：<span id="totalResults">0</span> 个，成功：<span id="successResults"
+                                class="text-green-500">0</span> 个，
+                            失败：<span id="failedResults" class="text-red-500">0</span> 个
+                        </div>
+                    </div>
+                    <div class="flex gap-2">
+                        <button class="px-4 py-1 rounded-full text-sm font-medium bg-gray-100 hover:bg-gray-200"
+                            id="retryFailed">
+                            <i class="fas fa-redo mr-1"></i>重查失败
+                        </button>
+                        <button class="text-gray-600 hover:text-gray-800" id="downloadResults" title="导出结果">
+                            <i class="fas fa-download"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 表格视图 -->
+                <div class="overflow-x-auto">
+                    <table class="resizable-table border-collapse" style="width: 1000px;">
+                        <thead>
+                            <tr class="bg-gray-50">
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border border-gray-200"
+                                    style="width: 3rem;">
+                                    <input type="checkbox" id="selectAll" class="rounded">
+                                </th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border border-gray-200"
+                                    style="width: 4rem;">
+                                    序号
+                                    <div class="resize-handle"></div>
+                                </th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border border-gray-200"
+                                    style="width: 12rem;">
+                                    域名
+                                    <div class="resize-handle"></div>
+                                </th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border border-gray-200"
+                                    style="width: 6rem;">
+                                    后缀
+                                    <div class="resize-handle"></div>
+                                </th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border border-gray-200"
+                                    style="width: 12rem;">
+                                    邮箱
+                                    <div class="resize-handle"></div>
+                                </th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border border-gray-200"
+                                    style="width: 8rem;">
+                                    状态
+                                    <div class="resize-handle"></div>
+                                </th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border border-gray-200"
+                                    style="width: 8rem;">
+                                    注册人
+                                    <div class="resize-handle"></div>
+                                </th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border border-gray-200"
+                                    style="width: 10rem;">
+                                    注册时间
+                                    <div class="resize-handle"></div>
+                                </th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border border-gray-200"
+                                    style="width: 10rem;">
+                                    到期时间
+                                    <div class="resize-handle"></div>
+                                </th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border border-gray-200"
+                                    style="width: 10rem;">
+                                    域名年龄
+                                    <div class="resize-handle"></div>
+                                </th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border border-gray-200"
+                                    style="width: 12rem;">
+                                    DNS服务器
+                                    <div class="resize-handle"></div>
+                                </th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border border-gray-200"
+                                    style="width: 6rem;">
+                                    操作
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white" id="resultTableBody">
+                            <!-- 结果行将通过 JavaScript 动态生成 -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- 原始数据查看对话框 -->
+                <div id="rawDataModal"
+                    class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center"
+                    onclick="if(event.target === this) this.classList.add('hidden')">
+                    <div class="bg-white rounded-lg w-3/4 max-h-[80vh] overflow-hidden">
+                        <div class="p-4 border-b flex justify-between items-center">
+                            <h3 class="text-lg font-medium">WHOIS 详细信息</h3>
+                            <button id="closeRawData" class="text-gray-500 hover:text-gray-700">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div class="p-4 overflow-auto max-h-[calc(80vh-8rem)]">
+                            <pre id="rawDataContent" class="whitespace-pre-wrap font-mono text-sm"></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="error" class="mt-6 hidden text-red-500"></div>
+        </div>
+    </div>
+
+    <footer class="mt-auto py-4 text-center text-gray-500 text-sm border-t">
+        Copyright © 2025 <span id="copyrightDomain"></span> All Rights Reserved.
+    </footer>
+
+    <script>
+        // 获取当前域名并设置到版权信息和顶部显示中
+        const currentDomain = window.location.hostname;
+        document.getElementById('copyrightDomain').textContent = currentDomain;
+        document.getElementById('currentDomain').textContent = currentDomain;
+    </script>
+</body>
+
+</html>
